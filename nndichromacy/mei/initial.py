@@ -5,6 +5,7 @@ from torch import Tensor, randn
 from collections import Iterable
 from dataport.bcm.color_mei.schema import StaticImage
 from ..tables.utils import preprocess_img_for_reconstruction
+import numpy as np
 
 
 def cumstom_initial_guess(*args, mean=0, std=1, device="cuda"):
@@ -105,6 +106,35 @@ class RandomNormalSelectedChannels(InitialGuessCreator):
         for channel, value in zip(self.selected_channels, self.selected_values):
             inital[:, channel, ...] = value
 
+        return inital
+
+    def __repr__(self):
+        return f"{self.__class__.__qualname__}()"
+
+
+class RandomNormBehaviorPositions(InitialGuessCreator):
+    """Used to create an initial guess tensor filled with values distributed according to a normal distribution."""
+
+    _create_random_tensor = randn
+
+    def __init__(self, selected_channels, selected_values):
+        if not isinstance(selected_channels, Iterable) and (selected_channels is not None):
+            selected_channels = (selected_channels)
+
+        if not isinstance(selected_values, Iterable) and (selected_values is not None):
+            selected_values = (selected_values)
+
+        self.selected_channels = selected_channels
+        self.selected_values = selected_values
+
+    def __call__(self, *shape):
+        """Creates a random initial guess from which to start the MEI optimization process given a shape."""
+
+        inital = self._create_random_tensor(*shape)
+        if self.selected_channels is not None:
+            for channel, value in zip(self.selected_channels, self.selected_values):
+                inital[:, channel, ...] = value
+        inital[:, -2:, ...] = torch.from_numpy(np.stack(np.meshgrid(np.linspace(-1, 1, shape[-1]), np.linspace(-1, 1, shape[-2]))))
         return inital
 
     def __repr__(self):
