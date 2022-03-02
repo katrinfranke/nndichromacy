@@ -4,17 +4,61 @@ import copy
 
 from torch import nn
 from torch.nn import functional as F
-
+from .readouts import MultipleCenterSurround
 
 class Encoder(nn.Module):
 
-    def __init__(self, core, readout, elu_offset, shifter=None):
+    def __init__(self, core, readout, elu_offset, linear, 
+                    final_nonlinear_for_linear,
+                    n_neurons_dict,shifter=None):
         super().__init__()
         self.core = core
         self.readout = readout
         self.offset = elu_offset
         self.shifter = shifter
+        self.linear = linear # True or False
+        self.final_nonlinear_for_linear=final_nonlinear_for_linear
+        self.n_neurons_dict = n_neurons_dict
+        for session in n_neurons_dict:
+            outdim=n_neurons_dict[session]
+        self.n_neurons=outdim
 
+        ### when share a and b for the whole output, initialization largely influence the model convergence
+        '''if self.linear == True:
+            if final_nonlinear_for_linear is not None:
+                self.a1=nn.Parameter(torch.Tensor([0.12]))
+                self.register_parameter("a1", self.a1)
+
+                self.b1=nn.Parameter(torch.Tensor([-0.5]))
+                self.register_parameter("b1", self.b1)
+
+                self.a2=nn.Parameter(torch.Tensor([-1.2]))
+                self.register_parameter("a2", self.a2)
+
+                self.b2=nn.Parameter(torch.Tensor([0.8]))
+                self.register_parameter("b2", self.b2)'''
+
+        if self.linear == True:
+            if self.final_nonlinear_for_linear is not None:
+                if self.final_nonlinear_for_linear >1:
+                    self.a1=nn.Parameter(torch.rand(self.n_neurons))
+                    self.register_parameter("a1", self.a1)
+
+                    self.b1=nn.Parameter(torch.rand(self.n_neurons))
+                    self.register_parameter("b1", self.b1)
+
+                    self.a2=nn.Parameter(torch.rand(self.n_neurons))
+                    self.register_parameter("a2", self.a2)
+
+                    self.b2=nn.Parameter(torch.rand(self.n_neurons))
+                    self.register_parameter("b2", self.b2)
+
+                    if self.final_nonlinear_for_linear>2:
+                        self.a3=nn.Parameter(torch.rand(self.n_neurons))
+                        self.register_parameter("a3", self.a3)
+
+                        self.b3=nn.Parameter(torch.rand(self.n_neurons))
+                        self.register_parameter("b3", self.b3)
 
     def forward(self, *args, data_key=None, eye_pos=None, shift=None, trial_idx=None, **kwargs):
 
@@ -52,6 +96,16 @@ class Encoder(nn.Module):
             shift = self.shifter[data_key](eye_pos)
 
         x = self.readout(x, data_key=data_key, shift=shift, **kwargs)
+         
+        if self.linear==True:
+            if self.final_nonlinear_for_linear is not None:
+                if self.final_nonlinear_for_linear>1:
+                    x = F.elu(x*self.a1+self.b1)
+                    x=x*self.a2+self.b2
+                    if self.final_nonlinear_for_linear>2:
+                        x = F.elu(x)
+                        x = x*self.a3+self.b3
+
         return F.elu(x + self.offset) + 1
 
     def regularizer(self, data_key):
@@ -135,7 +189,11 @@ class GeneralEncoder(nn.Module):
 
             shift = self.shifter[data_key](pupil_center)
 
-        x = self.readout(x, data_key=data_key, shift=shift, behavior=behavior, **kwargs)
+        if isinstance(self.readout, MultipleCenterSurround):
+            x = self.readout(x, x, data_key=data_key, shift=shift, **kwargs)
+        else:
+            x = self.readout(x, data_key=data_key, shift=shift, behavior=behavior, **kwargs)
+
         return F.elu(x + self.offset) + 1
 
     def regularizer(self, data_key):
